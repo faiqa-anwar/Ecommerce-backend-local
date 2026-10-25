@@ -50,5 +50,3 @@ each other's data)
 - Orders tab: change a status / stock, then ask the chat again.
 - "Copy customer chat link" gives a login-free, chat-only page for customers.
 
-
-process); use Redis if you run several instances.
