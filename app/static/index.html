@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Store Assistant</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c2230; --muted:#6b7385; --line:#e1e4ea; --brand:#4f46e5; --brand-text:#fff; --user:#4f46e5; --bot:#eef0f5; --err:#b42318; --ok:#067647; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12151c; --card:#1b2030; --text:#e8eaf0; --muted:#98a1b5; --line:#2c3347; --brand:#7c83ff; --brand-text:#0d1020; --user:#4f46e5; --bot:#262d42; --err:#ff8a80; --ok:#5ee0a0; } }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:17px; margin:0 0 10px; }
+  .muted { color:var(--muted); } .small { font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+  .narrow { max-width:380px; margin:12vh auto 0; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:10px; }
+  input, select, textarea { width:100%; margin-top:4px; padding:8px 10px; font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:8px; }
+  textarea { min-height:90px; resize:vertical; }
+  button { font:inherit; padding:8px 14px; border:0; border-radius:8px; cursor:pointer; background:var(--brand); color:var(--brand-text); font-weight:600; }
+  button.secondary { background:transparent; color:var(--text); border:1px solid var(--line); font-weight:500; }
+  button.small { padding:5px 10px; font-size:13px; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; } .grow { flex:1; min-width:0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .err-text { color:var(--err); min-height:1.2em; margin:6px 0 0; font-size:13px; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--line); flex-wrap:wrap; position:sticky; top:0; z-index:5; }
+  nav { display:flex; gap:4px; } nav button { background:transparent; color:var(--muted); font-weight:500; padding:6px 12px; }
+  nav button.active { background:var(--bg); color:var(--text); border:1px solid var(--line); }
+  .spacer { flex:1; }
+  main.wrap { max-width:900px; margin:0 auto; padding:16px; }
+  .notice { background:var(--card); border:1px solid var(--brand); border-radius:8px; padding:10px 14px; margin-bottom:14px; white-space:pre-wrap; }
+  #msgs { height:52vh; min-height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:4px 2px 10px; }
+  .bubble { max-width:82%; padding:9px 13px; border-radius:14px; white-space:pre-wrap; word-wrap:break-word; }
+  .bubble.user { align-self:flex-end; background:var(--user); color:#fff; border-bottom-right-radius:4px; }
+  .bubble.bot { align-self:flex-start; background:var(--bot); border-bottom-left-radius:4px; }
+  .bubble.pending { opacity:.7; font-style:italic; }
+  .bubble.err { align-self:flex-start; background:transparent; border:1px solid var(--err); color:var(--err); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:7px 6px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+  td input, td select { margin:0; padding:4px 6px; width:auto; max-width:140px; }
+  .tablewrap { overflow-x:auto; }
+  .chunk { border-bottom:1px solid var(--line); padding:8px 0; } .chunk:last-child { border:0; }
+  .tag { font-size:11px; padding:1px 7px; border-radius:99px; border:1px solid var(--line); color:var(--muted); margin-left:6px; }
+</style>
+</head>
+<body>
+
+<main id="auth" class="card narrow" hidden>
+  <h1>🛍️ Store Assistant</h1>
+  <p class="muted">AI customer-support chatbot for e-commerce, running on a local LLM.</p>
+  <form id="auth-form">
+    <label>Email <input id="a-email" type="email" required autocomplete="username"></label>
+    <label>Password <input id="a-pass" type="password" required minlength="8" autocomplete="current-password"></label>
+    <div class="row">
+      <button type="submit" id="btn-login">Log in</button>
+      <button type="button" id="btn-register" class="secondary">Create account</button>
+    </div>
+    <p id="a-err" class="err-text"></p>
+  </form>
+  <p class="muted small">New accounts get their own store automatically. Password: 8+ characters.</p>
+</main>
+
+<div id="app" hidden>
+  <header>
+    <strong id="store-name">Store</strong>
+    <nav id="tabs">
+      <button data-tab="chat" class="active">Chat</button>
+      <button data-tab="products">Products</button>
+      <button data-tab="kb">Knowledge base</button>
+      <button data-tab="orders">Orders</button>
+    </nav>
+    <span class="spacer"></span>
+    <button id="btn-demo" class="secondary small">Load demo data</button>
+    <button id="btn-logout" class="secondary small">Log out</button>
+  </header>
+
+  <main class="wrap">
+    <p id="notice" class="notice" hidden></p>
+
+    <section id="tab-chat">
+      <div class="card">
+        <div id="msgs"></div>
+        <form id="chat-form" class="row">
+          <input id="chat-input" class="grow" placeholder="Ask about products, policies, or an order…" autocomplete="off" maxlength="4000">
+          <button id="send" type="submit">Send</button>
+        </form>
+        <div class="row" style="margin-top:10px">
+          <label class="grow" style="margin:0">Customer email (optional, needed for order lookups)
+            <input id="cust-email" type="email" placeholder="customer@example.com"></label>
+          <button type="button" id="btn-newchat" class="secondary small">New chat</button>
+          <button type="button" id="btn-link" class="secondary small">Copy customer chat link</button>
+        </div>
+        <p class="muted small" style="margin-bottom:0">The first reply can take a while: the local model has to load into memory.</p>
+      </div>
+    </section>
+
+    <section id="tab-products" hidden>
+      <div class="card">
+        <h2>Add product</h2>
+        <form id="prod-form">
+          <div class="grid">
+            <label>SKU <input name="sku" required maxlength="64"></label>
+            <label>Name <input name="name" required maxlength="255"></label>
+            <label>Category <input name="category"></label>
+            <label>Price <input name="price" type="number" step="0.01" min="0" required></label>
+            <label>Stock <input name="stock_quantity" type="number" min="0" value="10" required></label>
+          </div>
+          <label>Description <input name="description"></label>
+          <button type="submit">Add product</button>
+          <span id="prod-err" class="err-text"></span>
+        </form>
+      </div>
+      <div class="card"><h2>Catalog</h2><div class="tablewrap"><table id="prod-table"></table></div></div>
+    </section>
+
+    <section id="tab-kb" hidden>
+      <div class="card">
+        <h2>Add a document (policy, FAQ…)</h2>
+        <form id="doc-form">
+          <label>Title <input name="title" required maxlength="255"></label>
+          <label>Content <textarea name="content" required></textarea></label>
+          <div class="row">
+            <button type="submit">Add to knowledge base</button>
+            <button type="button" id="btn-sync" class="secondary">Re-index products</button>
+            <span id="doc-err" class="err-text"></span>
+          </div>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Test retrieval</h2>
+        <form id="search-form" class="row"><input id="search-q" class="grow" placeholder="e.g. can I send this back?" required><button type="submit">Search</button></form>
+        <div id="search-out"></div>
+      </div>
+      <div class="card"><h2>Stored chunks</h2><div id="kb-list"></div></div>
+    </section>
+
+    <section id="tab-orders" hidden>
+      <div class="card">
+        <h2>Create order</h2>
+        <form id="order-form">
+          <div class="grid">
+            <label>Customer email <input name="customer_email" type="email" required></label>
+            <label>Customer name <input name="customer_name"></label>
+            <label>Product <select name="product_id" id="order-product" required></select></label>
+            <label>Quantity <input name="quantity" type="number" min="1" value="1" required></label>
+          </div>
+          <button type="submit">Create order</button>
+          <span id="order-err" class="err-text"></span>
+        </form>
+      </div>
+      <div class="card"><h2>Orders</h2>
+        <p class="muted small">Set an order to <b>shipped</b> or <b>delivered</b> to demo order tracking and returns in the chat.</p>
+        <div class="tablewrap"><table id="order-table"></table></div></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const STATUSES = ["pending","paid","fulfilled","shipped","delivered","cancelled","return_requested","refunded"];
+const params = new URLSearchParams(location.search);
+const chatOnlyKey = params.get("key");           // ?key=STORE_KEY -> customer-facing chat only
+const state = { token: localStorage.getItem("token"), storeKey: chatOnlyKey, convId: null, products: [] };
+
+// Tiny DOM helper. Everything is inserted as text nodes, never innerHTML, so
+// chat/product content can't inject markup.
+function h(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null) e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return e;
+}
+const clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
+
+const FRIENDLY = {
+  LOGIN_BAD_CREDENTIALS: "Wrong email or password.",
+  REGISTER_USER_ALREADY_EXISTS: "An account with that email already exists. Try logging in.",
+};
+function errText(data, status) {
+  const d = data && data.detail;
+  if (typeof d === "string") return FRIENDLY[d] || d;
+  if (d && d.reason) return d.reason;
+  if (Array.isArray(d)) return d.map((x) => (x.loc ? x.loc.slice(1).join(".") + ": " : "") + x.msg).join("; ");
+  return `Request failed (${status})`;
+}
+
+async function api(path, { method = "GET", json, form, headers = {}, auth = true } = {}) {
+  const opts = { method, headers: { ...headers } };
+  if (auth && state.token) opts.headers.Authorization = "Bearer " + state.token;
+  if (json !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(json); }
+  if (form) { opts.headers["Content-Type"] = "application/x-www-form-urlencoded"; opts.body = new URLSearchParams(form); }
+  let res;
+  try { res = await fetch(path, opts); } catch { throw new Error("Cannot reach the server. Is it running?"); }
+  if (res.status === 401 && auth) { logout(); throw new Error("Session expired. Please log in again."); }
+  let data = null;
+  if (res.status !== 204) { try { data = await res.json(); } catch {} }
+  if (!res.ok) throw new Error(errText(data, res.status));
+  return data;
+}
+
+function notice(msg) { const n = $("#notice"); n.textContent = msg; n.hidden = !msg; }
+function showTab(name) {
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  ["chat", "products", "kb", "orders"].forEach((t) => ($("#tab-" + t).hidden = t !== name));
+  ({ products: loadProducts, kb: loadKB, orders: loadOrders }[name] || (() => {}))();
+}
+
+/* ---------- auth ---------- */
+function logout() { localStorage.removeItem("token"); state.token = null; location.search ? (location.href = location.pathname) : start(); }
+async function login(email, password) {
+  const d = await api("/auth/jwt/login", { method: "POST", form: { username: email, password }, auth: false });
+  state.token = d.access_token; localStorage.setItem("token", d.access_token);
+}
+$("#auth-form").addEventListener("submit", async (e) => {
+  e.preventDefault(); $("#a-err").textContent = "";
+  try { await login($("#a-email").value.trim(), $("#a-pass").value); await start(); }
+  catch (err) { $("#a-err").textContent = err.message; }
+});
+$("#btn-register").addEventListener("click", async () => {
+  $("#a-err").textContent = "";
+  const email = $("#a-email").value.trim(), password = $("#a-pass").value;
+  try {
+    await api("/auth/register", { method: "POST", json: { email, password }, auth: false });
+    await login(email, password); await start();
+  } catch (err) { $("#a-err").textContent = err.message; }
+});
+$("#btn-logout").addEventListener("click", logout);
+
+/* ---------- chat ---------- */
+function bubble(cls, text) { const b = h("div", { class: "bubble " + cls }, text); const m = $("#msgs"); m.append(b); m.scrollTop = m.scrollHeight; return b; }
+function resetChat() {
+  state.convId = null; clear($("#msgs"));
+  bubble("bot", "Hi! I can help with products, store policies, and your orders. What do you need?");
+}
+$("#btn-newchat").addEventListener("click", resetChat);
+$("#btn-link").addEventListener("click", async () => {
+  const link = `${location.origin}/?key=${state.storeKey}`;
+  try { await navigator.clipboard.writeText(link); notice("Customer chat link copied:\n" + link); } catch { notice("Customer chat link:\n" + link); }
+});
+$("#chat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#chat-input"), text = input.value.trim();
+  if (!text) return;
+  input.value = ""; bubble("user", text);
+  const pending = bubble("bot pending", "Thinking…"); let secs = 0;
+  const timer = setInterval(() => (pending.textContent = `Thinking… ${++secs}s`), 1000);
+  $("#send").disabled = true;
+  try {
+    const body = { message: text };
+    if (state.convId) body.conversation_id = state.convId;
+    const email = $("#cust-email").value.trim(); if (email) body.customer_email = email;
+    const d = await api("/chat", { method: "POST", json: body, headers: { "X-Store-Key": state.storeKey }, auth: false });
+    state.convId = d.conversation_id; pending.className = "bubble bot"; pending.textContent = d.reply;
+  } catch (err) { pending.className = "bubble err"; pending.textContent = err.message; }
+  finally { clearInterval(timer); $("#send").disabled = false; input.focus(); $("#msgs").scrollTop = $("#msgs").scrollHeight; }
+});
+
+/* ---------- products ---------- */
+async function loadProducts() {
+  const t = clear($("#prod-table"));
+  try {
+    state.products = await api("/products");
+    t.append(h("tr", {}, ["SKU", "Name", "Category", "Price", "Stock"].map((c) => h("th", {}, c))));
+    if (!state.products.length) t.append(h("tr", {}, h("td", { colspan: 5, class: "muted" }, "No products yet. Add one above or click “Load demo data”.")));
+    for (const p of state.products) {
+      const stock = h("input", { type: "number", min: 0, value: p.stock_quantity, style: "width:80px" });
+      stock.addEventListener("change", async () => {
+        try { await api(`/products/${p.id}/stock`, { method: "PATCH", json: { stock_quantity: Number(stock.value) } }); notice(`Stock for ${p.sku} set to ${stock.value}.`); }
+        catch (err) { notice(err.message); }
+      });
+      t.append(h("tr", {}, h("td", {}, p.sku), h("td", {}, p.name), h("td", {}, p.category), h("td", {}, "$" + Number(p.price).toFixed(2)), h("td", {}, stock)));
+    }
+  } catch (err) { notice(err.message); }
+}
+$("#prod-form").addEventListener("submit", async (e) => {
+  e.preventDefault(); $("#prod-err").textContent = "";
+  const f = Object.fromEntries(new FormData(e.target));
+  try {
+    await api("/products", { method: "POST", json: { ...f, price: Number(f.price), stock_quantity: Number(f.stock_quantity) } });
+    e.target.reset(); notice("Product added. Click “Re-index products” in the Knowledge base tab so the chatbot can find it."); loadProducts();
+  } catch (err) { $("#prod-err").textContent = err.message; }
+});
+
+/* ---------- knowledge base ---------- */
+async function loadKB() {
+  const box = clear($("#kb-list"));
+  try {
+    const chunks = await api("/knowledge-base");
+    if (!chunks.length) box.append(h("p", { class: "muted" }, "Nothing here yet."));
+    for (const c of chunks) {
+      const del = h("button", { class: "secondary small", onclick: async () => { try { await api("/knowledge-base/" + c.id, { method: "DELETE" }); loadKB(); } catch (err) { notice(err.message); } } }, "Delete");
+      box.append(h("div", { class: "chunk" }, h("div", { class: "row" }, h("strong", { class: "grow" }, c.title, h("span", { class: "tag" }, c.source_type)), del),
+        h("div", { class: "muted small" }, c.content.length > 220 ? c.content.slice(0, 220) + "…" : c.content)));
+    }
+  } catch (err) { notice(err.message); }
+}
+$("#doc-form").addEventListener("submit", async (e) => {
+  e.preventDefault(); $("#doc-err").textContent = "";
+  try {
+    const d = await api("/knowledge-base/documents", { method: "POST", json: Object.fromEntries(new FormData(e.target)) });
+    e.target.reset(); notice(`Added (${d.chunks_created} chunk${d.chunks_created === 1 ? "" : "s"}).`); loadKB();
+  } catch (err) { $("#doc-err").textContent = err.message; }
+});
+$("#btn-sync").addEventListener("click", async () => {
+  try { const d = await api("/knowledge-base/sync-products", { method: "POST" }); notice(`Indexed ${d.products_indexed} product(s).`); loadKB(); }
+  catch (err) { notice(err.message); }
+});
+$("#search-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const out = clear($("#search-out"));
+  try {
+    const rs = await api("/knowledge-base/search", { method: "POST", json: { query: $("#search-q").value } });
+    if (!rs.length) out.append(h("p", { class: "muted" }, "No results (is the knowledge base empty?)."));
+    for (const r of rs) out.append(h("div", { class: "chunk" }, h("strong", {}, r.chunk.title, h("span", { class: "tag" }, "score " + r.score.toFixed(2))), h("div", { class: "muted small" }, r.chunk.content)));
+  } catch (err) { notice(err.message); }
+});
+
+/* ---------- orders ---------- */
+async function loadOrders() {
+  const t = clear($("#order-table"));
+  try {
+    const [orders, products] = await Promise.all([api("/orders"), api("/products")]);
+    state.products = products;
+    const sel = clear($("#order-product"));
+    products.forEach((p) => sel.append(h("option", { value: p.id }, `${p.name} ($${Number(p.price).toFixed(2)})`)));
+    t.append(h("tr", {}, ["#", "Customer", "Status", "Total", "Tracking"].map((c) => h("th", {}, c))));
+    if (!orders.length) t.append(h("tr", {}, h("td", { colspan: 5, class: "muted" }, "No orders yet.")));
+    for (const o of orders) {
+      const status = h("select", {}, STATUSES.map((s) => h("option", { value: s, selected: s === o.status }, s)));
+      const tracking = h("input", { value: o.tracking_number || "", placeholder: "tracking #" });
+      const save = async (payload) => { try { await api("/orders/" + o.id, { method: "PATCH", json: payload }); notice(`Order #${o.id} updated.`); loadOrders(); } catch (err) { notice(err.message); } };
+      status.addEventListener("change", () => save({ status: status.value, ...(["shipped", "delivered"].includes(status.value) && !tracking.value ? { tracking_number: "TRK-" + o.id + "-DEMO" } : {}) }));
+      tracking.addEventListener("change", () => save({ tracking_number: tracking.value }));
+      t.append(h("tr", {}, h("td", {}, o.id), h("td", {}, o.customer_email), h("td", {}, status), h("td", {}, "$" + Number(o.total_amount).toFixed(2)), h("td", {}, tracking)));
+    }
+  } catch (err) { notice(err.message); }
+}
+$("#order-form").addEventListener("submit", async (e) => {
+  e.preventDefault(); $("#order-err").textContent = "";
+  const f = Object.fromEntries(new FormData(e.target));
+  try {
+    const o = await api("/orders", { method: "POST", json: { customer_email: f.customer_email, customer_name: f.customer_name, items: [{ product_id: Number(f.product_id), quantity: Number(f.quantity) }] } });
+    notice(`Order #${o.id} created.`); loadOrders();
+  } catch (err) { $("#order-err").textContent = err.message; }
+});
+
+/* ---------- demo data ---------- */
+const DEMO_PRODUCTS = [
+  { sku: "HP-100", name: "Wireless Headphones", description: "Over-ear, noise cancelling, 30hr battery.", category: "Electronics", price: 89.99, stock_quantity: 25 },
+  { sku: "SH-200", name: "Running Shoes", description: "Lightweight trail running shoes, breathable mesh.", category: "Footwear", price: 64.5, stock_quantity: 40 },
+  { sku: "BT-300", name: "Insulated Water Bottle", description: "Keeps drinks cold for 24 hours, 750ml.", category: "Accessories", price: 19.99, stock_quantity: 100 },
+  { sku: "BP-400", name: "Laptop Backpack", description: "Water-resistant, fits up to 16-inch laptops.", category: "Bags", price: 45, stock_quantity: 15 },
+  { sku: "WT-500", name: "Smart Watch", description: "Heart-rate tracking, 7-day battery, GPS.", category: "Electronics", price: 129, stock_quantity: 8 },
+];
+const DEMO_DOCS = [
+  ["Return Policy", "Items can be returned within 30 days of delivery for a full refund, as long as they're unused and in original packaging. Return shipping is free for defective items."],
+  ["Shipping Policy", "Standard shipping takes 3-5 business days and is free on orders over $50. Express shipping (1-2 days) is available at checkout for an extra fee."],
+  ["Warranty Info", "All electronics come with a 1-year manufacturer warranty covering defects. Warranty does not cover accidental damage or normal wear and tear."],
+];
+$("#btn-demo").addEventListener("click", async () => {
+  if (!confirm("Add sample products, orders and policy documents to this store?")) return;
+  const btn = $("#btn-demo"); btn.disabled = true; notice("Loading demo data…");
+  try {
+    for (const p of DEMO_PRODUCTS) { try { await api("/products", { method: "POST", json: p }); } catch {} } // already exists -> skip
+    const bySku = Object.fromEntries((await api("/products")).map((p) => [p.sku, p.id]));
+    const mk = async (sku, qty, status) => {
+      const o = await api("/orders", { method: "POST", json: { customer_email: "customer@example.com", customer_name: "Demo Customer", items: [{ product_id: bySku[sku], quantity: qty }] } });
+      await api("/orders/" + o.id, { method: "PATCH", json: { status, tracking_number: "TRK-" + o.id + "-DEMO" } });
+      return o.id;
+    };
+    const shipped = await mk("HP-100", 1, "shipped"), delivered = await mk("SH-200", 2, "delivered");
+    for (const [title, content] of DEMO_DOCS) await api("/knowledge-base/documents", { method: "POST", json: { title, content } });
+    await api("/knowledge-base/sync-products", { method: "POST" });
+    notice(`Demo data loaded. Try these in the chat:\n• “Do you have wireless headphones?”\n• “What's your return policy?”\n• “Where is order #${shipped}?” (email: customer@example.com)\n• “I want to return order #${delivered}, it doesn't fit” (email: customer@example.com)`);
+    $("#cust-email").value = "customer@example.com";
+  } catch (err) { notice("Demo load failed: " + err.message); }
+  finally { btn.disabled = false; }
+});
+
+/* ---------- boot ---------- */
+async function start() {
+  $("#auth").hidden = true; $("#app").hidden = true;
+  if (chatOnlyKey) {                       // customer-facing mode: chat only, no login
+    $("#tabs").hidden = $("#btn-demo").hidden = $("#btn-logout").hidden = true;
+    $("#btn-link").hidden = true; $("#store-name").textContent = "Store support";
+    $("#app").hidden = false; return resetChat();
+  }
+  if (!state.token) { $("#auth").hidden = false; return; }
+  try {
+    const store = await api("/stores/me");
+    state.storeKey = store.public_api_key; $("#store-name").textContent = store.name;
+    $("#app").hidden = false; notice(""); showTab("chat"); resetChat();
+  } catch { $("#auth").hidden = false; }
+}
+document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => { notice(""); showTab(b.dataset.tab); }));
+start();
+</script>
+</body>
+</html>
